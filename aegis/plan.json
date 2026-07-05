@@ -9,7 +9,9 @@
       "name": "edge",
       "provider_name": "registry.terraform.io/hashicorp/aws",
       "change": {
-        "actions": ["create"],
+        "actions": [
+          "create"
+        ],
         "before": null,
         "after": {
           "name": "aegis-demo-edge",
@@ -18,7 +20,9 @@
               "from_port": 443,
               "to_port": 443,
               "protocol": "tcp",
-              "cidr_blocks": ["0.0.0.0/0"]
+              "cidr_blocks": [
+                "0.0.0.0/0"
+              ]
             }
           ]
         },
@@ -32,7 +36,10 @@
       "name": "primary",
       "provider_name": "registry.terraform.io/hashicorp/aws",
       "change": {
-        "actions": ["delete", "create"],
+        "actions": [
+          "delete",
+          "create"
+        ],
         "before": {
           "identifier": "aegis-demo-primary",
           "engine": "postgres"
@@ -47,7 +54,32 @@
         "after_sensitive": {
           "password": true
         },
-        "replace_paths": [["engine_version"]]
+        "replace_paths": [
+          [
+            "engine_version"
+          ]
+        ]
+      }
+    },
+    {
+      "address": "aws_route53_record.edge",
+      "mode": "managed",
+      "type": "aws_route53_record",
+      "name": "edge",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "name": "api.example.com",
+          "type": "A",
+          "weighted_routing_policy": {
+            "weight": 10
+          }
+        },
+        "after_sensitive": {}
       }
     }
   ],
@@ -58,7 +90,9 @@
           "address": "aws_db_instance.primary",
           "expressions": {
             "vpc_security_group_ids": {
-              "references": ["aws_security_group.edge.id"]
+              "references": [
+                "aws_security_group.edge.id"
+              ]
             }
           }
         }
