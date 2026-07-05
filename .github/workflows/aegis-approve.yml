@@ -25,7 +25,9 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           gh label create aegis-approved --repo "$REPO" --color 22c55e --description "Approved by AegisIaC demo gate" || true
-          gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label aegis-approved
+          gh api "repos/$REPO/issues/$PR_NUMBER/labels" \
+            --method POST \
+            --field labels[]="aegis-approved"
           gh pr comment "$PR_NUMBER" --repo "$REPO" --body "AegisIaC approval applied. Re-running the plan-review gate for the approved plan hash."
 
           branch="$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefName --jq '.headRefName')"
