@@ -3,10 +3,14 @@ name: aegis-actions-wall
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
+  pull-requests: read
+  issues: read
   pages: write
   id-token: write
 
@@ -27,6 +31,28 @@ jobs:
       - name: Run AegisIaC demo gate
         run: node aegis/scan.mjs
 
+      - name: Enforce Aegis approval label
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          labels="$(gh pr view "$PR_NUMBER" --repo "$REPO" --json labels --jq '.labels[].name')"
+          if echo "$labels" | grep -qx "aegis-approved"; then
+            echo "Aegis approval found. Unblocking merge gate." >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo ""
+              echo "## Approval required"
+              echo ""
+              echo "This PR is intentionally blocked until AegisIaC applies the \`aegis-approved\` approval."
+              echo ""
+              echo "Review the architecture page, then run the approve workflow with PR number \`$PR_NUMBER\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
       - name: Upload review artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -37,6 +63,7 @@ jobs:
 
   deploy-wall:
     needs: plan-review
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

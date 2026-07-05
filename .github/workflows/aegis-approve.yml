@@ -1,0 +1,44 @@
+name: aegis-approve-pr
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to approve
+        required: true
+        type: string
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  approve:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply Aegis approval and rerun gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh label create aegis-approved --repo "$REPO" --color 22c55e --description "Approved by AegisIaC demo gate" || true
+          gh pr edit "$PR_NUMBER" --repo "$REPO" --add-label aegis-approved
+          gh pr comment "$PR_NUMBER" --repo "$REPO" --body "AegisIaC approval applied. Re-running the plan-review gate for the approved plan hash."
+
+          branch="$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefName --jq '.headRefName')"
+          run_id="$(gh run list --repo "$REPO" --workflow aegis-actions-wall --branch "$branch" --json databaseId,status,conclusion,event --jq '[.[] | select(.event == "pull_request")][0].databaseId')"
+
+          if [ -n "$run_id" ] && [ "$run_id" != "null" ]; then
+            gh run rerun "$run_id" --repo "$REPO"
+          fi
+
+          {
+            echo "# AegisIaC approval applied"
+            echo ""
+            echo "PR #$PR_NUMBER now has the \`aegis-approved\` label."
+            echo ""
+            echo "The latest pull-request gate has been rerun and should unblock once complete."
+          } >> "$GITHUB_STEP_SUMMARY"
