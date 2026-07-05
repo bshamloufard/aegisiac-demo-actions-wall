@@ -45,8 +45,8 @@ jobs:
           set -euo pipefail
 
           marker="<!-- isengard-review-link -->"
-          encoded_repo="$(jq -rn --arg value "$GITHUB_REPOSITORY" '$value | @uri')"
-          review_url="${ISENGARD_REVIEW_URL%/}/?repo=${encoded_repo}&pr=${PR_NUMBER}&sha=${HEAD_SHA}&run=${GITHUB_RUN_ID}"
+          short_ref="aw-${PR_NUMBER}-${HEAD_SHA:0:7}"
+          review_url="${ISENGARD_REVIEW_URL%/}/pr/${short_ref}"
 
           jq -n \
             --arg state pending \
