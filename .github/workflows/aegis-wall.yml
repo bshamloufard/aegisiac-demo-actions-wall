@@ -10,9 +10,13 @@ on:
 permissions:
   contents: read
   pull-requests: read
-  issues: read
+  issues: write
+  statuses: write
   pages: write
   id-token: write
+
+env:
+  ISENGARD_REVIEW_URL: https://isengard-environment-ui-production.up.railway.app/
 
 concurrency:
   group: pages
@@ -30,6 +34,62 @@ jobs:
 
       - name: Run AegisIaC demo gate
         run: node aegis/scan.mjs
+
+      - name: Publish Isengard PR trace
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          marker="<!-- isengard-review-link -->"
+          encoded_repo="$(jq -rn --arg value "$GITHUB_REPOSITORY" '$value | @uri')"
+          review_url="${ISENGARD_REVIEW_URL%/}/?repo=${encoded_repo}&pr=${PR_NUMBER}&sha=${HEAD_SHA}&run=${GITHUB_RUN_ID}"
+
+          jq -n \
+            --arg state pending \
+            --arg context isengard/plan-review \
+            --arg description "Waiting for Isengard approval before merge." \
+            --arg target_url "$review_url" \
+            '{state:$state, context:$context, description:$description, target_url:$target_url}' \
+            > "$RUNNER_TEMP/isengard-status.json"
+
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" \
+            --method POST \
+            --input "$RUNNER_TEMP/isengard-status.json"
+
+          cat > "$RUNNER_TEMP/isengard-comment.md" <<MARKDOWN
+          $marker
+          ## Isengard infrastructure review
+
+          This pull request is blocked until the infrastructure review is approved in Isengard.
+
+          [Open Isengard review]($review_url)
+
+          **Gate:** \`isengard/plan-review\`
+          **Commit:** \`$HEAD_SHA\`
+          MARKDOWN
+
+          existing_comment_id="$(
+            gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
+              --jq ".[] | select(.body | contains(\"$marker\")) | .id" \
+              | tail -n 1
+          )"
+
+          jq -n --rawfile body "$RUNNER_TEMP/isengard-comment.md" '{body:$body}' \
+            > "$RUNNER_TEMP/isengard-comment.json"
+
+          if [ -n "$existing_comment_id" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/issues/comments/$existing_comment_id" \
+              --method PATCH \
+              --input "$RUNNER_TEMP/isengard-comment.json"
+          else
+            gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+              --method POST \
+              --input "$RUNNER_TEMP/isengard-comment.json"
+          fi
 
       - name: Enforce Aegis plan-hash approval
         if: github.event_name == 'pull_request'
