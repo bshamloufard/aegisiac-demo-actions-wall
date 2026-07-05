@@ -1,0 +1,56 @@
+name: aegis-actions-wall
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  plan-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Redact Terraform plan
+        run: |
+          jq 'del(.. | .before_sensitive?, .after_sensitive?, .sensitive_values?)' aegis/plan.json > aegis/plan.redacted.json
+
+      - name: Run AegisIaC demo gate
+        run: node aegis/scan.mjs
+
+      - name: Upload review artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aegis-plan-review
+          path: |
+            aegis/plan.redacted.json
+            aegis/report.json
+
+  deploy-wall:
+    needs: plan-review
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Redact Terraform plan
+        run: |
+          jq 'del(.. | .before_sensitive?, .after_sensitive?, .sensitive_values?)' aegis/plan.json > aegis/plan.redacted.json
+      - name: Generate static report
+        run: node aegis/scan.mjs
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

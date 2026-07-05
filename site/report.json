@@ -1,0 +1,26 @@
+{
+  "planHash": "60490b4b5e6e88d20fbdd556d624745dae956c1ff21105359e73728c73cee7a2",
+  "status": "action_required",
+  "tier": "high",
+  "costDeltaMonthlyUsd": 574,
+  "changes": 2,
+  "findings": [
+    {
+      "severity": "high",
+      "rule": "AEGIS-NET-443",
+      "resource": "aws_security_group.edge",
+      "message": "Public ingress is introduced and must be rate-limited or approved."
+    },
+    {
+      "severity": "critical",
+      "rule": "AEGIS-STATEFUL-001",
+      "resource": "aws_db_instance.primary",
+      "message": "Stateful database replacement requires security approval."
+    }
+  ],
+  "approval": {
+    "required": true,
+    "check": "aegis/plan-review",
+    "reason": "Critical stateful replacement and public ingress."
+  }
+}
