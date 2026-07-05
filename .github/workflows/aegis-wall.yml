@@ -31,24 +31,22 @@ jobs:
       - name: Run AegisIaC demo gate
         run: node aegis/scan.mjs
 
-      - name: Enforce Aegis approval label
+      - name: Enforce Aegis plan-hash approval
         if: github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          REPO: ${{ github.repository }}
         run: |
-          labels="$(gh pr view "$PR_NUMBER" --repo "$REPO" --json labels --jq '.labels[].name')"
-          if echo "$labels" | grep -qx "aegis-approved"; then
-            echo "Aegis approval found. Unblocking merge gate." >> "$GITHUB_STEP_SUMMARY"
+          plan_hash="$(jq -r '.planHash' aegis/report.json)"
+          if [ -f aegis/approval.json ] && jq -e --arg hash "$plan_hash" '.decision == "approved" and .planHash == $hash' aegis/approval.json >/dev/null; then
+            echo "Aegis approval hash matches current plan. Unblocking merge gate." >> "$GITHUB_STEP_SUMMARY"
           else
             {
               echo ""
               echo "## Approval required"
               echo ""
-              echo "This PR is intentionally blocked until AegisIaC applies the \`aegis-approved\` approval."
+              echo "This PR is intentionally blocked until AegisIaC writes an approval for the current plan hash."
               echo ""
-              echo "Review the architecture page, then run the approve workflow with PR number \`$PR_NUMBER\`."
+              echo "Current plan hash: \`$plan_hash\`"
+              echo ""
+              echo "Review the architecture page, then run the approve workflow with PR number \`${{ github.event.pull_request.number }}\`."
             } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi

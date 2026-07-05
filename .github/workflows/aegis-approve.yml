@@ -10,37 +10,58 @@ on:
 
 permissions:
   actions: write
-  contents: read
-  issues: write
+  contents: write
   pull-requests: read
 
 jobs:
   approve:
     runs-on: ubuntu-latest
     steps:
-      - name: Apply Aegis approval and rerun gate
+      - name: Resolve pull request branch
+        id: pr
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ inputs.pr_number }}
           REPO: ${{ github.repository }}
         run: |
-          gh label create aegis-approved --repo "$REPO" --color 22c55e --description "Approved by AegisIaC demo gate" || true
-          gh api "repos/$REPO/issues/$PR_NUMBER/labels" \
-            --method POST \
-            --field labels[]="aegis-approved"
-          gh pr comment "$PR_NUMBER" --repo "$REPO" --body "AegisIaC approval applied. Re-running the plan-review gate for the approved plan hash."
-
           branch="$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefName --jq '.headRefName')"
-          run_id="$(gh run list --repo "$REPO" --workflow aegis-actions-wall --branch "$branch" --json databaseId,status,conclusion,event --jq '[.[] | select(.event == "pull_request")][0].databaseId')"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
 
-          if [ -n "$run_id" ] && [ "$run_id" != "null" ]; then
-            gh run rerun "$run_id" --repo "$REPO"
-          fi
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.branch }}
 
+      - name: Write plan-hash approval artifact
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          jq 'del(.. | .before_sensitive?, .after_sensitive?, .sensitive_values?)' aegis/plan.json > aegis/plan.redacted.json
+          node aegis/scan.mjs
+          plan_hash="$(jq -r '.planHash' aegis/report.json)"
+          jq -n \
+            --arg decision approved \
+            --arg pr "$PR_NUMBER" \
+            --arg hash "$plan_hash" \
+            --arg approvedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{decision:$decision, pullRequest:($pr|tonumber), planHash:$hash, approvedAt:$approvedAt, approver:"aegis-demo"}' \
+            > aegis/approval.json
+
+      - name: Commit approval to PR branch
+        run: |
+          git config user.name "aegis-demo-bot"
+          git config user.email "aegis-demo-bot@users.noreply.github.com"
+          git add aegis/approval.json
+          git commit -m "chore: approve current aegis plan hash"
+          git push
+
+      - name: Summarize approval
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
           {
             echo "# AegisIaC approval applied"
             echo ""
-            echo "PR #$PR_NUMBER now has the \`aegis-approved\` label."
+            echo "PR #$PR_NUMBER now has an \`aegis/approval.json\` artifact bound to the current plan hash."
             echo ""
-            echo "The latest pull-request gate has been rerun and should unblock once complete."
+            echo "The push triggers the pull-request gate again; it should unblock once complete."
           } >> "$GITHUB_STEP_SUMMARY"
